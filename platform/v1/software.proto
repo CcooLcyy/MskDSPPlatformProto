@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+package mskdsp.platform.software.v1;
+
+// PubMgr 使用的软件发布服务。所有 RPC 均要求 metadata 中的
+// authorization: Bearer <发布令牌>；未配置令牌或认证不通过返回 UNAUTHENTICATED。
+// 上传不等于发布；只有显式发布后才会出现在公共目录、latest.json 与下载入口。
+// CI 专用令牌仅允许前四个上传 RPC，且仅能操作 mskdsp-platform/main/ci 包。
+// 平台包完成后仅保存为私有候选，任何令牌均不能发布或撤回平台包。
+service SoftwarePublishService {
+  // 创建可恢复上传任务。相同产品/版本/平台和元数据重复调用返回同一任务；
+  // 不同内容占用同一版本返回 FAILED_PRECONDITION。非法元数据返回
+  // INVALID_ARGUMENT，超过文件大小/任务数量限制返回 RESOURCE_EXHAUSTED。
+  rpc CreateUpload(CreateUploadRequest) returns (CreateUploadResponse);
+  // 客户端流式上传；至少一条非空分块，每块最多 1 MiB，所有分块必须携带
+  // 相同 upload_id，offset 必须等于平台已落盘字节数。偏移/状态冲突返回
+  // FAILED_PRECONDITION，越界/非法消息返回 INVALID_ARGUMENT 或 RESOURCE_EXHAUSTED。
+  // 流正常结束只返回进度，不校验入库；中断、取消或超时后调用 GetUpload 获取
+  // 已落盘偏移，从该偏移恢复。禁止盲目重发旧偏移。空闲 60 秒或总时长
+  // 30 分钟返回 DEADLINE_EXCEEDED，已确认写入的字节保留。
+  rpc UploadPackage(stream UploadPackageRequest) returns (UploadPackageResponse);
+  // 查询任务和已落盘偏移；任务不存在返回 NOT_FOUND。可用于处理上传响应丢失。
+  rpc GetUpload(GetUploadRequest) returns (GetUploadResponse);
+  // 独立核对大小和 SHA256 后入库；成功后重复调用返回同一包。
+  // 尚未传完/完整性失败返回 FAILED_PRECONDITION 或 INVALID_ARGUMENT；
+  // 完整性失败任务不可续传。内部存储错误返回 INTERNAL，可查询状态后重试。
+  rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse);
+  // 将完整包发布到 ci/beta/stable，原子更新通道 latest.json。相同包重复发布幂等；
+  // 可用于切回历史包。public_base_url 未配置/无效、包损坏或不支持的通道组合
+  // 返回 FAILED_PRECONDITION/INVALID_ARGUMENT，原通道指向保持不变。
+  rpc PublishRelease(PublishReleaseRequest) returns (PublishReleaseResponse);
+  // 仅撤回仍指向该包的通道引用，重复操作幂等；不删除历史文件，不自动回退。
+  // 包不存在返回 NOT_FOUND，非法通道返回 INVALID_ARGUMENT。
+  rpc WithdrawRelease(WithdrawReleaseRequest) returns (WithdrawReleaseResponse);
+}
+
+// 上位机可调用的公共只读目录，仅包含已发布或曾发布过的包。
+// 未发布包统一视为不存在；返回的通道为空表示该包当前不被任何通道引用。
+service SoftwareCatalogService {
+  // 查询公开包，可按产品、平台、当前通道进行精确匹配；空字段不限制。
+  // 不存在的过滤条件返回空列表；不能通过目录读取待发布包或上传任务。
+  rpc ListPackages(ListPackagesRequest) returns (ListPackagesResponse);
+  // 按包 ID 获取公开元数据。不存在或尚未发布返回 NOT_FOUND。
+  rpc GetPackage(GetPackageRequest) returns (GetPackageResponse);
+}
+
+// 客户端提供的文件身份；客户端不能指定服务端目录。
+message PackageMetadata {
+  // mskdsp-upper、mskdsp-lower 或仅入库的平台 mskdsp-platform。
+  string product = 1;
+  string version = 2;
+  // 上位机使用 Tauri 目标名；下位机为 linux-arm64 或 linux-x64；平台为 linux-amd64。
+  string platform = 3;
+  string file_name = 4;
+  uint64 size = 5;
+  // 安装包 SHA256，64 位十六进制字符串。
+  string sha256 = 6;
+  // 上位机必填：Tauri 更新签名原文。
+  string signature = 7;
+  string notes = 8;
+  // 下位机必填：安装包内部版本和 sha256:<64位摘要> 镜像身份。
+  string package_version = 9;
+  string image_id = 10;
+  string source_repository = 11;
+  string source_ref = 12;
+  string source_sha = 13;
+  // 平台 CI 包必填：RFC3339 UTC 构建时间，与版本中的 UTC 时间一致。
+  string build_time = 14;
+  // 平台仅支持 ci；上下位机旧包缺省为空，发布通道仍由 PublishRelease 指定。
+  string channel = 15;
+}
+
+message Upload {
+  string id = 1;
+  PackageMetadata metadata = 2;
+  uint64 received_bytes = 3;
+  // uploading / completed / failed / expired。
+  string state = 4;
+  // 未入库为空。
+  string package_id = 5;
+  // Unix 秒。
+  uint64 created_at = 6;
+  uint64 updated_at = 7;
+}
+
+message Package {
+  string id = 1;
+  PackageMetadata metadata = 2;
+  // RFC3339 UTC 时间；尚未发布时 published_at 为空。
+  string created_at = 3;
+  string published_at = 4;
+  repeated string channels = 5;
+  bool ever_published = 6;
+}
+
+message CreateUploadRequest { PackageMetadata metadata = 1; }
+message CreateUploadResponse { Upload upload = 1; }
+message UploadPackageRequest {
+  string upload_id = 1;
+  uint64 offset = 2;
+  bytes data = 3;
+}
+message UploadPackageResponse { Upload upload = 1; }
+message GetUploadRequest { string upload_id = 1; }
+message GetUploadResponse { Upload upload = 1; }
+message CompleteUploadRequest { string upload_id = 1; }
+message CompleteUploadResponse { Package package = 1; }
+message PublishReleaseRequest {
+  string package_id = 1;
+  string channel = 2;
+}
+message PublishReleaseResponse { Package package = 1; }
+message WithdrawReleaseRequest {
+  string package_id = 1;
+  string channel = 2;
+}
+message WithdrawReleaseResponse { Package package = 1; }
+message ListPackagesRequest {
+  string product = 1;
+  string channel = 2;
+  string platform = 3;
+}
+message ListPackagesResponse { repeated Package packages = 1; }
+message GetPackageRequest { string package_id = 1; }
+message GetPackageResponse { Package package = 1; }
