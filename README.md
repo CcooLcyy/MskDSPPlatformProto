@@ -1,6 +1,6 @@
 # MskDSPPlatformProto
 
-MskDSP 平台的 Protocol Buffers 接口契约仓库，供平台服务、上位机和 PubMgr 按需引用并生成服务端或客户端代码。
+MskDSP 平台的 Protocol Buffers 接口契约仓库，供平台服务、上位机、CI 和发布客户端按需引用并生成服务端或客户端代码。
 
 ## 职责边界
 
@@ -13,7 +13,7 @@ MskDSP 平台的 Protocol Buffers 接口契约仓库，供平台服务、上位�
 
 契约位于 `platform/v1/software.proto`，命名空间为 `mskdsp.platform.software.v1`。
 
-- `SoftwarePublishService` 面向 PubMgr 和 GitLab CI：创建上传任务、按偏移分块上传、查询进度、校验入库；只有完整发布权限才能发布和撤回。
+- `SoftwarePublishService` 面向 CI 和发布客户端：创建上传任务、按偏移分块上传、查询进度、校验入库；只有完整发布权限才能发布和撤回。
 - `SoftwareCatalogService` 面向上位机：查询已发布或曾发布版本；安装包和兼容 `latest.json` 清单通过平台 HTTP 下载。
 
 发布 RPC 必须携带 gRPC metadata `authorization: Bearer <发布令牌>`。令牌由平台管理员独立配置，不能写入协议仓库或日志；未配置时发布服务拒绝请求。
