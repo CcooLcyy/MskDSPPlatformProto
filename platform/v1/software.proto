@@ -42,6 +42,13 @@ service SoftwareCatalogService {
   rpc ListPackages(ListPackagesRequest) returns (ListPackagesResponse);
   // 按包 ID 获取公开元数据。不存在或尚未发布返回 NOT_FOUND。
   rpc GetPackage(GetPackageRequest) returns (GetPackageResponse);
+  // 匿名服务端流式下载安装包，从实际落盘 offset 续传；每块最多 256 KiB，
+  // offset 连续且各块 total_size/sha256 相同，仅末块 eof=true。
+  // offset 等于文件大小时返回一个空 EOF 块，超过大小返回 OUT_OF_RANGE。
+  // 未发布包与平台私有候选返回 NOT_FOUND；曾发布后撤回的历史包仍可下载。
+  // 文件完整性异常返回 DATA_LOSS，读取/背压空闲或总时限返回 DEADLINE_EXCEEDED；
+  // 客户端取消后停止读取。收到 EOF 后客户端仍须核对完整文件大小/SHA256及产品签名。
+  rpc DownloadPackage(DownloadPackageRequest) returns (stream DownloadPackageChunk);
 }
 
 // 客户端提供的文件身份；客户端不能指定服务端目录。
@@ -123,3 +130,16 @@ message ListPackagesRequest {
 message ListPackagesResponse { repeated Package packages = 1; }
 message GetPackageRequest { string package_id = 1; }
 message GetPackageResponse { Package package = 1; }
+// offset 为客户端已保存的安装包字节数，不是分块序号。
+message DownloadPackageRequest {
+  string package_id = 1;
+  uint64 offset = 2;
+}
+// sha256 与 total_size 描述完整安装包，续传时也不得改为剩余部分身份。
+message DownloadPackageChunk {
+  uint64 offset = 1;
+  bytes data = 2;
+  uint64 total_size = 3;
+  string sha256 = 4;
+  bool eof = 5;
+}
