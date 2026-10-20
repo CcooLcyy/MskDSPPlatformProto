@@ -24,6 +24,30 @@ MskDSP 平台的 Protocol Buffers 接口契约仓库，供平台服务、上位�
 
 各项目应将仓库固定到明确提交，并用对应语言的 protobuf/gRPC 工具生成代码。服务端向后兼容增加字段时分配新字段号，禁止重用删除字段号或改变现有字段含义；破坏性协议使用新的版本命名空间。
 
+## 远程设备与 SSH 隧道
+
+契约位于 `platform/v1/remote.proto`，命名空间为 `mskdsp.platform.remote.v1`。复用平台现有 gRPC 监听地址；设备控制连接与每条数据隧道使用独立的双向流。
+
+- `DeviceAccessService.ConnectDevice`：下位机使用独立设备 Bearer 令牌上线，首帧为 `hello`，接收平台打开隧道通知；每 30 秒发送完整服务列表心跳。
+- `DeviceAccessService.AttachTunnel`：下位机先连接本机目标，再使用设备凭据和一次性票据附着数据流。票据绑定设备和当前控制连接，15 秒有效且仅消费一次。
+- `RemoteAccessService.ListDevices`：上位机使用既有账号登录会话查询获授权设备，不包含设备凭据或现场地址。
+- `RemoteAccessService.OpenTunnel`：上位机首帧指定设备及服务名称，平台授权并配对设备数据流；收到 `ready` 后转发 `data`，支持方向独立的 `half_close` 和完整 `close`。
+
+服务名称为 `ModuleManager`、下位机允许且实际运行的模块名或 `ssh`；不能传任意 URL/IP/端口。每帧 1～65536 字节，每设备最多 16 条隧道，背压等待最多 30 秒。隧道断开不重放字节，设备重连不恢复旧隧道。协议逐项错误码、首帧及超时要求以 RPC 中文注释为准。
+
+用户凭据与设备凭据不得混用，公网连接要求 TLS。平台按设备及服务类别授权；通用字节隧道不解析模块 RPC，不能据此承诺读写分离。SSH 身份校验和系统登录由上位机 SSH 客户端与下位机 SSH 服务完成，平台不解密 SSH 会话、不保存 SSH 密码或私钥。
+
+实现方案与验收见平台仓库 `docs/远程设备接入与SSH隧道.md`。各消费仓库可以固定提交引用子模块或保存规范文件镜像；镜像必须与本仓库字节一致。运行 `python -m unittest discover -s tests -v` 验证线格式兼容，运行 `python scripts/check_remote_consumers.py --workspace <三端仓库父目录>` 验证消费端协议一致性（需要 Python protobuf 包及 protoc）。
+
+`scripts/remote_smoke.py` 使用独立 Python 客户端启动本机真实平台程序，在临时目录创建测试账号、设备和数据，验证 Web 授权、gRPC 登录、设备上线、双向二进制数据、半关闭尾部、票据防重放和运行中撤权。依赖 `grpcio`、`protobuf` 和 `protoc`，TLS 模式另需 `cryptography`。脚本不接受部署地址，不操作远端：
+
+```sh
+python scripts/remote_smoke.py --platform-binary ../MskDSPPlatform/target/debug/mskdsp-platform.exe
+python scripts/remote_smoke.py --platform-binary ../MskDSPPlatform/target/debug/mskdsp-platform.exe --tls
+```
+
+这类本机跨语言验证不包含下位机 C++ 编译、ARM64 或现场 SSH 验收。Linux 下将可执行路径调整为无 `.exe` 后缀的本机程序。
+
 ## 公共安装包流式下载
 
 `DownloadPackageRequest` 为 `package_id:string=1`、`offset:uint64=2`；响应 `DownloadPackageChunk` 为 `offset:uint64=1`、`data:bytes=2`、`total_size:uint64=3`、`sha256:string=4`、`eof:bool=5`。此新增 RPC 不改变既有消息字段。
