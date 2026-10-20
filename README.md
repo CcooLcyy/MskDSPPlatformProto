@@ -35,15 +35,14 @@ MskDSP 平台的 Protocol Buffers 接口契约仓库，供平台服务、上位�
 
 服务名称为 `ModuleManager`、下位机允许且实际运行的模块名或 `ssh`；不能传任意 URL/IP/端口。每帧 1～65536 字节，每设备最多 16 条隧道，背压等待最多 30 秒。隧道断开不重放字节，设备重连不恢复旧隧道。协议逐项错误码、首帧及超时要求以 RPC 中文注释为准。
 
-用户凭据与设备凭据不得混用。连接可复用现有明文 gRPC，也可选择 TLS；使用明文时，平台登录和设备令牌随明文连接传输。平台按设备及服务类别授权；通用字节隧道不解析模块 RPC，不能据此承诺读写分离。SSH 身份校验和系统登录由上位机 SSH 客户端与下位机 SSH 服务完成，平台不解密 SSH 会话、不保存 SSH 密码或私钥。
+用户凭据与设备凭据不得混用。连接统一复用现有明文 gRPC，平台登录和设备令牌随明文连接传输，不提供 TLS 或证书配置。平台按设备及服务类别授权；通用字节隧道不解析模块 RPC，不能据此承诺读写分离。SSH 身份校验和系统登录由上位机 SSH 客户端与下位机 SSH 服务完成，平台不解密 SSH 会话、不保存 SSH 密码或私钥。
 
 实现方案与验收见平台仓库 `docs/远程设备接入与SSH隧道.md`。各消费仓库可以固定提交引用子模块或保存规范文件镜像；镜像必须与本仓库字节一致。运行 `python -m unittest discover -s tests -v` 验证线格式兼容，运行 `python scripts/check_remote_consumers.py --workspace <三端仓库父目录>` 验证消费端协议一致性（需要 Python protobuf 包及 protoc）。
 
-`scripts/remote_smoke.py` 使用独立 Python 客户端启动本机真实平台程序，在临时目录创建测试账号、设备和数据，验证 Web 授权、gRPC 登录、设备上线、双向二进制数据、半关闭尾部、票据防重放和运行中撤权。依赖 `grpcio`、`protobuf` 和 `protoc`，TLS 模式另需 `cryptography`。脚本不接受部署地址，不操作远端：
+`scripts/remote_smoke.py` 使用独立 Python 客户端启动本机真实平台程序，在临时目录创建测试账号、设备和数据，验证 Web 授权、明文 gRPC 登录、设备上线、双向二进制数据、半关闭尾部、票据防重放和运行中撤权。依赖 `grpcio`、`protobuf` 和 `protoc`。脚本不接受部署地址，不操作远端：
 
 ```sh
 python scripts/remote_smoke.py --platform-binary ../MskDSPPlatform/target/debug/mskdsp-platform.exe
-python scripts/remote_smoke.py --platform-binary ../MskDSPPlatform/target/debug/mskdsp-platform.exe --tls
 ```
 
 这类本机跨语言验证不包含下位机 C++ 编译、ARM64 或现场 SSH 验收。Linux 下将可执行路径调整为无 `.exe` 后缀的本机程序。

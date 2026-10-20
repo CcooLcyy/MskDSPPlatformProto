@@ -6,9 +6,7 @@
 
 import argparse
 import concurrent.futures
-import datetime
 import http.cookiejar
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -67,7 +65,7 @@ class Outbound:
 
 
 class Smoke:
-    def __init__(self, binary, temporary, tls=False):
+    def __init__(self, binary, temporary):
         self.binary = binary
         self.temporary = Path(temporary)
         self.pool = descriptor_pool.DescriptorPool()
@@ -79,7 +77,6 @@ class Smoke:
             self.grpc_port = unused_port()
         self.base = f"http://127.0.0.1:{self.http_port}"
         self.process = None
-        self.tls = tls
         self.control = None
         self.workers = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         self.stop = threading.Event()
@@ -141,38 +138,6 @@ class Smoke:
             f'grpc_addr="127.0.0.1:{self.grpc_port}"\n'
             f'[auth]\npassword_hash="{admin_hash}"\n'
         )
-        roots = None
-        if self.tls:
-            from cryptography import x509
-            from cryptography.hazmat.primitives import hashes, serialization
-            from cryptography.hazmat.primitives.asymmetric import rsa
-            from cryptography.x509.oid import NameOID
-
-            key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-            subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
-            now = datetime.datetime.now(datetime.timezone.utc)
-            certificate = (
-                x509.CertificateBuilder().subject_name(subject).issuer_name(subject)
-                .public_key(key.public_key()).serial_number(x509.random_serial_number())
-                .not_valid_before(now - datetime.timedelta(minutes=1))
-                .not_valid_after(now + datetime.timedelta(days=1))
-                .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-                .add_extension(x509.SubjectAlternativeName([
-                    x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
-                ]), critical=False).sign(key, hashes.SHA256())
-            )
-            roots = certificate.public_bytes(serialization.Encoding.PEM)
-            cert_file, key_file = self.temporary / "server.pem", self.temporary / "server-key.pem"
-            cert_file.write_bytes(roots)
-            key_file.write_bytes(key.private_bytes(
-                serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption(),
-            ))
-            key_file.chmod(0o600)
-            config_text += (
-                '[tls]\nenabled=true\n'
-                f'server_certificate={json.dumps(cert_file.as_posix())}\n'
-                f'server_private_key={json.dumps(key_file.as_posix())}\n'
-            )
         config.write_text(config_text, encoding="utf-8")
         environment = os.environ.copy()
         environment["MSKDSP_PLATFORM_CONFIG"] = str(config)
@@ -202,8 +167,7 @@ class Smoke:
         self.device_id = device["device_id"]
         self.device_auth = (("authorization", f"Bearer {device['token']}"),)
         address = f"127.0.0.1:{self.grpc_port}"
-        self.channel = (grpc.secure_channel(address, grpc.ssl_channel_credentials(root_certificates=roots))
-                        if self.tls else grpc.insecure_channel(address))
+        self.channel = grpc.insecure_channel(address)
         grpc.channel_ready_future(self.channel).result(timeout=10)
         login = self.rpc(f"{AGENT}.AgentService", "Login", f"{AGENT}.LoginResponse")(
             self.msg(f"{AGENT}.LoginRequest", username="remote-smoke", password=user_password), timeout=10,
@@ -227,7 +191,7 @@ class Smoke:
         )
         assert next(self.control).WhichOneof("payload") == "welcome"
         self.control_worker = self.workers.submit(self.control_loop)
-        print(f"通过：真实平台进程、Web设备授权、Python用户登录及设备上线（TLS={self.tls}）")
+        print("通过：真实平台进程、Web设备授权、Python用户登录及设备明文 gRPC 上线")
 
     def control_loop(self):
         try:
@@ -353,11 +317,10 @@ class Smoke:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform-binary", type=Path, required=True)
-    parser.add_argument("--tls", action="store_true", help="生成临时本机证书并验证真实 TLS（需要 cryptography）")
     args = parser.parse_args()
     binary = args.platform_binary.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="mskdsp-local-smoke-") as temporary:
-        smoke = Smoke(binary, temporary, tls=args.tls)
+        smoke = Smoke(binary, temporary)
         try:
             smoke.start()
             smoke.check_echo()
