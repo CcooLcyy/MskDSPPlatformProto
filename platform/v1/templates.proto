@@ -1,0 +1,42 @@
+syntax = "proto3";
+package mskdsp.platform.templates.v1;
+
+// 上位机只读点表目录。每次调用均要求唯一的 authorization: Bearer 会话凭据；
+// 复用 ClientAuth，管理员和操作员均可读取；网页 Cookie、失效及撤销的会话不受理。
+// 版本号使用规范的正整数十进制 u64 字符串，避免 JavaScript 数值精度损失。
+service TemplateCatalog {
+  // 返回当前有效模板摘要，不包含已删除模板；最多 1000 张。
+  rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse);
+  // 查询当前或指定历史版本；不存在的模板/版本返回 NOT_FOUND。
+  // 已删除模板仅可按显式版本读取历史，历史不受回收站清理影响，仍须会话鉴权。
+  rpc GetTemplate(GetTemplateRequest) returns (TemplateRecord);
+}
+message ListTemplatesRequest {}
+message GetTemplateRequest {
+  // 平台记录的标准小写 UUID，与模板 JSON 内部 id 不同。
+  string id = 1;
+  // 空字符串读取当前有效版本；非空读取不可变历史快照。
+  string revision = 2;
+}
+message TemplateSummary {
+  string id = 1;
+  string revision = 2;
+  string name = 3;
+  string manufacturer = 4;
+  repeated string models = 5;
+  string protocol_version = 6;
+  uint32 point_count = 7;
+  // Unix 毫秒。
+  uint64 updated_at = 8;
+}
+message ListTemplatesResponse { repeated TemplateSummary templates = 1; }
+message TemplateRecord {
+  string id = 1;
+  string revision = 2;
+  // 完整模板 JSON，最大 10 MiB、最多 10000 点；保留十进制倍率等原文本。
+  // 客户端 gRPC 接收上限需至少 12 MiB，以包含 protobuf 封装开销。
+  string template_json = 3;
+  // Unix 毫秒。
+  uint64 created_at = 4;
+  uint64 updated_at = 5;
+}
