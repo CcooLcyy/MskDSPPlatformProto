@@ -29,11 +29,13 @@ MskDSP 平台的 Protocol Buffers 接口契约仓库，供平台服务、上位�
 契约位于 `platform/v1/remote.proto`，命名空间为 `mskdsp.platform.remote.v1`。复用平台现有 gRPC 监听地址；设备控制连接与每条数据隧道使用独立的双向流。
 
 - `DeviceAccessService.ConnectDevice`：下位机使用独立设备 Bearer 令牌上线，首帧为 `hello`，接收平台打开隧道通知；每 30 秒发送完整服务列表心跳。
-- `DeviceAccessService.AttachTunnel`：下位机先连接本机目标，再使用设备凭据和一次性票据附着数据流。票据绑定设备和当前控制连接，15 秒有效且仅消费一次。
+- `DeviceAccessService.AttachTunnel`：下位机先连接本机服务或固定纵密目标，再使用设备凭据和一次性票据附着数据流。票据绑定设备和当前控制连接，15 秒有效且仅消费一次。
 - `RemoteAccessService.ListDevices`：上位机使用既有账号登录会话查询获授权设备，不包含设备凭据或现场地址。
 - `RemoteAccessService.OpenTunnel`：上位机首帧指定设备及服务名称，平台授权并配对设备数据流；收到 `ready` 后转发 `data`，支持方向独立的 `half_close` 和完整 `close`。
 
-服务名称为 `ModuleManager`、下位机允许且实际运行的模块名或 `ssh`；不能传任意 URL/IP/端口。每帧 1～65536 字节，每设备最多 16 条隧道，背压等待最多 30 秒。隧道断开不重放字节，设备重连不恢复旧隧道。协议逐项错误码、首帧及超时要求以 RPC 中文注释为准。
+服务名称为 `ModuleManager`、下位机允许且实际运行的模块名、`ssh` 或固定纵密服务 `vertical-security`；不能传任意 URL/IP/端口。每帧 1～65536 字节，每设备最多 16 条隧道，背压等待最多 30 秒。隧道断开不重放字节，设备重连不恢复旧隧道。协议逐项错误码、首帧及超时要求以 RPC 中文注释为准。
+
+另有上位机内部纵密维护服务 `vertical-security`，仅由启用 SSH 维护能力的下位机登记，目标固定为 `11.22.33.44:8888`。平台将其与 `ssh` 一样按现有 `allow_ssh` 授权、过滤列表和动态撤权；仅 `allow_grpc` 不能使用该服务。该扩展沿用现有服务名称字段和字节流契约，不引入协议字段、任意目标参数或通用 IP 通道。纵密 TLS 和账号认证由上位机与装置处理，平台仅转发。
 
 用户凭据与设备凭据不得混用。连接统一复用现有明文 gRPC，平台登录和设备令牌随明文连接传输，不提供 TLS 或证书配置。平台按设备及服务类别授权；通用字节隧道不解析模块 RPC，不能据此承诺读写分离。SSH 身份校验和系统登录由上位机 SSH 客户端与下位机 SSH 服务完成，平台不解密 SSH 会话、不保存 SSH 密码或私钥。
 
