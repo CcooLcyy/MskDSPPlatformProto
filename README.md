@@ -4,11 +4,11 @@ MskDSP 平台的 Protocol Buffers 接口契约仓库，供平台服务、上位�
 
 ## 仓库来源与 CI
 
-仓库主地址为 https://github.com/CcooLcyy/MskDSPPlatformProto ，本仓库的 Git 远端使用 GitHub。
+仓库主地址为 https://github.com/CcooLcyy/MskDSPPlatformProto ，本仓库的 Git 远端使用 GitHub。仓库公开，消费项目可通过 HTTPS 匿名读取，无需协议仓库访问令牌。
 
 本仓库不单独编译或发布，因此不设置独立 GitHub Actions 工作流。协议代码生成、兼容性检查及依赖项目验证由引用固定协议提交的消费项目 CI 执行；下文的检查脚本也应在具备依赖的 CI 环境中运行。
 
-消费项目已有的 GitLab 子模块地址及 CI 获取脚本不随本仓库远端切换自动更新。切换这些引用前，应先确认 GitHub 私有仓库读取凭据和 CI 网络可达性，并保留固定提交约束。
+消费项目应将子模块地址及 CI 获取脚本指向 `https://github.com/CcooLcyy/MskDSPPlatformProto.git`，并保留固定提交约束。已有子模块工作副本切换地址后需同步本地子模块配置；CI 环境须能访问 GitHub。
 
 ## 职责边界
 
