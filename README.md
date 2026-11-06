@@ -17,7 +17,7 @@ MskDSP 平台的 Protocol Buffers 接口契约仓库，供平台服务、上位�
 - `SoftwareCatalogService` 面向上位机：查询已发布或曾发布版本，并通过 `DownloadPackage` 服务端流下载安装包；既有 HTTP 安装包和 `latest.json` 清单保持兼容。
 
 发布 RPC 必须携带 gRPC metadata `authorization: Bearer <发布令牌>`。令牌由平台管理员独立配置，不能写入协议仓库或日志；未配置时发布服务拒绝请求。
-客户端每块最多发送 1 MiB，遇到断线先 `GetUpload` 查询落盘偏移再续传。流结束后必须显式 `CompleteUpload` 校验，再调用 `PublishRelease` 更新指定通道。重复创建、完成和发布的幂等语义及错误码见 RPC 中文注释。
+客户端每块最多发送 1 MiB，遇到断线先 `GetUpload` 查询落盘偏移再续传。流结束后必须显式 `CompleteUpload` 校验，再调用 `PublishRelease` 更新上下位机的 CI/Stable 通道。Beta 已停止新增和重复发布，历史 Beta 包仍支持查询、下载及撤回。重复创建、完成和发布的幂等语义及错误码见 RPC 中文注释。
 
 平台自身 CI 包的产品为 `mskdsp-platform`、架构为 `linux-amd64`，新增兼容字段 `build_time=14`、`channel=15`，仅接受 `main` 和 `ci`。CI 专用令牌只允许创建、上传、查询和完成这些包，不能发布、撤回或操作上下位机包。
 平台自身包在 `CompleteUpload` 后成为私有候选，GitLab 不调用 `PublishRelease`；平台管理员检查本地软件仓库后显式决定升级。公共目录与下载不公开这些候选包。

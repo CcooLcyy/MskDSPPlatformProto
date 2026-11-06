@@ -25,8 +25,9 @@ service SoftwarePublishService {
   // 尚未传完/完整性失败返回 FAILED_PRECONDITION 或 INVALID_ARGUMENT；
   // 完整性失败任务不可续传。内部存储错误返回 INTERNAL，可查询状态后重试。
   rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse);
-  // 将完整包发布到 ci/beta/stable，原子更新通道 latest.json。相同包重复发布幂等；
-  // 可用于切回历史包。public_base_url 未配置/无效、包损坏或不支持的通道组合
+  // 将上下位机完整包发布到 ci/stable，原子更新通道 latest.json。相同包重复发布幂等；
+  // Beta 已停止新增和重复发布，历史 Beta 包仍可查询、下载及撤回，不支持重新发布。
+  // 可用于将 ci/stable 切回历史包。public_base_url 未配置/无效、包损坏或不支持的通道组合
   // 返回 FAILED_PRECONDITION/INVALID_ARGUMENT，原通道指向保持不变。
   rpc PublishRelease(PublishReleaseRequest) returns (PublishReleaseResponse);
   // 仅撤回仍指向该包的通道引用，重复操作幂等；不删除历史文件，不自动回退。
